@@ -1,0 +1,1165 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>PDV - WAGNER Doces (v11.2 - Mobile Fix + Estoque)</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+  
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            chocolate: '#5D4037',      
+            chocolateLight: '#8D6E63', 
+            doceriaPink: '#D81B60',    
+            doceriaCream: '#FFF3E0',   
+            dark: '#2d2420',
+            mpBlue: '#009EE3',
+            gold: '#FFD700',
+            silver: '#C0C0C0',
+            bronze: '#CD7F32',
+            diamond: '#B9F2FF'
+          },
+          animation: {
+            'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* LAYOUT E SCROLL */
+    html, body, #root { 
+        height: 100%; margin: 0; padding: 0; overflow: hidden; 
+        background-color: #fdfbf7; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        -webkit-tap-highlight-color: transparent; 
+    }
+    
+    .app-container {
+        height: 100vh; display: flex; flex-direction: row; overflow: hidden;
+    }
+
+    @media (max-width: 768px) {
+        .app-container { flex-direction: column; }
+    }
+
+    .main-content-area {
+        flex: 1; display: flex; flex-direction: column; height: 100%; overflow: hidden; position: relative;
+    }
+
+    .scrollable-content {
+        flex: 1; overflow-y: auto; padding-bottom: 80px; 
+    }
+
+    /* SCROLLBAR PERSONALIZADA */
+    ::-webkit-scrollbar { width:6px; height:6px; }
+    ::-webkit-scrollbar-thumb { background: #8D6E63; border-radius:999px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+
+    /* KPI CARDS */
+    .kpi-card {
+        padding: 1.5rem; border-radius: 1rem; color: white; position: relative;
+        overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+    }
+    .kpi-card:hover { transform: translateY(-2px); }
+    .kpi-value { font-size: 1.8rem; font-weight: 800; }
+    .kpi-label { font-size: 0.8rem; opacity: 0.9; text-transform: uppercase; font-weight: bold; letter-spacing: 0.05em; }
+
+    /* CUPOM DE IMPRESSÃO */
+    @media print {
+      body * { visibility: hidden; }
+      #cupom-imprecao, #cupom-imprecao * { visibility: visible; }
+      #cupom-imprecao { position: fixed; left: 0; top: 0; width: 100%; margin: 0; padding: 0; background: white; color: black; }
+      @page { margin: 0; size: auto; }
+    }
+  </style>
+</head>
+<body class="bg-slate-50">
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+  const { useState, useEffect, useMemo, useRef } = React;
+
+  /*************************************************
+   * CONFIGURAÇÃO VISUAL PROFISSIONAL (CHARTS)
+   *************************************************/
+  
+  const CORES = {
+      primary: '#5D4037',     
+      secondary: '#D81B60',   
+      accent: '#FFB74D',      
+      success: '#43A047',     
+      info: '#26C6DA',        
+      neutral: '#8D6E63',     
+      light: '#FFF3E0',       
+      palette: [
+          '#5D4037', '#D81B60', '#FBC02D', '#00ACC1', '#8E24AA', '#FB8C00', '#558B2F'
+      ]
+  };
+
+  Chart.register(ChartDataLabels);
+  Chart.defaults.font.family = "'Segoe UI', sans-serif";
+  Chart.defaults.color = '#5D4037';
+
+  function ChartComponent({ type, data, options }) {
+      const canvasRef = useRef(null);
+      const chartRef = useRef(null);
+      
+      useEffect(() => {
+          if (!canvasRef.current) return;
+          if (chartRef.current) chartRef.current.destroy();
+
+          const defaultOptions = {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                  legend: { 
+                      position: 'bottom',
+                      labels: { usePointStyle: true, padding: 20, font: { size: 11, weight: 'bold' } }
+                  },
+                  datalabels: {
+                      display: true, 
+                      color: '#fff',
+                      font: { weight: 'bold', size: 11 },
+                      formatter: (value) => {
+                          if(typeof value === 'number' && value > 100) return 'R$ ' + value.toFixed(0);
+                          return value;
+                      },
+                      anchor: 'end',
+                      align: 'start',
+                      offset: -4,
+                      backgroundColor: (context) => context.dataset.backgroundColor,
+                      borderRadius: 4,
+                      padding: 4
+                  }
+              }
+          };
+
+          const finalOptions = { ...defaultOptions, ...options };
+          if(options?.plugins) finalOptions.plugins = { ...defaultOptions.plugins, ...options.plugins };
+
+          chartRef.current = new Chart(canvasRef.current, { 
+              type, data, options: finalOptions, plugins: [ChartDataLabels] 
+          });
+          
+          return () => { if (chartRef.current) chartRef.current.destroy(); }
+      }, [data, options, type]);
+
+      return <canvas ref={canvasRef} />;
+  }
+
+  /*************************************************
+   * UTILITÁRIOS E STORAGE
+   *************************************************/
+
+  function uid(){ return Date.now() + Math.floor(Math.random()*9999); }
+  function currency(v){ return 'R$ ' + Number(v||0).toFixed(2).replace('.', ','); }
+  
+  function storageGet(key, fallback=null){ 
+    try {
+      const data = localStorage.getItem('WAGNER_doceria_v11_' + key); 
+      return data ? JSON.parse(data) : fallback;
+    } catch(e){ return fallback; }
+  }
+
+  function storageSet(key, value){ 
+    try { localStorage.setItem('WAGNER_doceria_v11_' + key, JSON.stringify(value)); } catch(e){}
+  }
+
+  // --- FUNÇÃO CORRIGIDA PARA EXCEL (CONTABILIDADE) ---
+  function gerarCSVContabil(vendas, dataInicio, dataFim) {
+    if(!vendas || !vendas.length) return alert("Sem dados para exportar.");
+    
+    const inicio = new Date(dataInicio + 'T00:00:00');
+    const fim = new Date(dataFim + 'T23:59:59');
+    
+    const vendasFiltradas = vendas.filter(v => {
+        const d = new Date(v.data);
+        return d >= inicio && d <= fim;
+    });
+
+    if(vendasFiltradas.length === 0) return alert("Nenhuma venda encontrada neste período.");
+
+    let csvContent = "\uFEFFID;Data;Hora;Dia Semana;Loja;Cliente;Meio Pagamento;Total Venda (R$);Producao Propria (R$);Revenda Mercadoria (R$);Itens\n";
+
+    vendasFiltradas.forEach(v => {
+        const d = new Date(v.data);
+        const dataStr = d.toLocaleDateString('pt-BR');
+        const horaStr = d.toLocaleTimeString('pt-BR');
+        const diaSemana = ['Domingo','Segunda','Terca','Quarta','Quinta','Sexta','Sabado'][d.getDay()];
+        
+        let totalRevenda = 0;
+        let totalProducao = 0;
+        const totalVenda = Number(v.total || 0);
+
+        const resumoItens = v.itens.map(i => {
+            const qtd = Number(i.quantidade || 1);
+            const precoUnit = Number(i.preco || 0);
+            const totalItem = precoUnit * qtd;
+
+            const nomeLower = (i.nome || '').toLowerCase();
+            const catLower = (i.categoria || '').toLowerCase();
+            
+            const isRevenda = catLower === 'bebidas' || 
+                              nomeLower.includes('água') || 
+                              nomeLower.includes('agua') || 
+                              nomeLower.includes('refrigerante') || 
+                              nomeLower.includes('coca') || 
+                              nomeLower.includes('guaraná') ||
+                              nomeLower.includes('lata') ||
+                              nomeLower.includes('suco');
+
+            if(isRevenda) {
+                totalRevenda += totalItem;
+            } else {
+                totalProducao += totalItem;
+            }
+
+            return `${qtd}x ${i.nome}`;
+        }).join(" | ");
+
+        const somaItens = totalProducao + totalRevenda;
+        if(Math.abs(totalVenda - somaItens) > 0.05) {
+            totalProducao = totalVenda - totalRevenda; 
+        }
+
+        const f = (n) => Number(n).toFixed(2).replace('.', ',');
+
+        const linha = [
+            v.id.toString().slice(-8),
+            dataStr,
+            horaStr,
+            diaSemana,
+            v.loja || 'Matriz',
+            v.clienteId ? `Cliente #${v.clienteId}` : 'Consumidor Final',
+            v.metodo || 'Dinheiro',
+            f(totalVenda),
+            f(totalProducao),
+            f(totalRevenda),
+            resumoItens
+        ].join(";");
+
+        csvContent += linha + "\n";
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `RELATORIO_CONTABIL_${dataInicio}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  /**********************
+   * DADOS INICIAIS
+   **********************/
+  const initialProducts = [
+    { id: 1, nome: 'Brigadeiro Tradicional', preco: 3.50, custo: 1.20, emoji: '🍫', categoria: 'Tradicionais', estoque: { morada: 50, novoHorizonte: 30 }, limiteAlerta: 10 },
+    { id: 2, nome: 'Beijinho', preco: 3.50, custo: 1.10, emoji: '🥥', categoria: 'Tradicionais', estoque: { morada: 45, novoHorizonte: 25 }, limiteAlerta: 10 },
+    { id: 3, nome: 'Ninho com Nutella', preco: 5.50, custo: 2.50, emoji: '🍬', categoria: 'Gourmet', estoque: { morada: 30, novoHorizonte: 10 }, limiteAlerta: 10 },
+    { id: 4, nome: 'Brigadeiro de Nozes', preco: 5.50, custo: 2.30, emoji: '🌰', categoria: 'Gourmet', estoque: { morada: 20, novoHorizonte: 5 }, limiteAlerta: 10 },
+    { id: 5, nome: 'Bombom de Morango', preco: 7.50, custo: 3.50, emoji: '🍓', categoria: 'Bombons', estoque: { morada: 15, novoHorizonte: 8 }, limiteAlerta: 10 },
+    { id: 6, nome: 'Água Mineral', preco: 4.00, custo: 1.50, emoji: '💧', categoria: 'Bebidas', estoque: { morada: 100, novoHorizonte: 60 }, limiteAlerta: 10 },
+  ];
+  
+  const initialClients = [
+      { id: 101, nome: 'Maria Silva', telefone: '27 99999-0000', saldoPontos: 150, totalAcumulado: 450, nivel: 'Prata', historico: [] },
+      { id: 102, nome: 'João Santos', telefone: '27 98888-1111', saldoPontos: 45, totalAcumulado: 45, nivel: 'Bronze', historico: [] },
+  ];
+
+  /* ================= VIEWS DO SISTEMA ================= */
+
+  function DashboardView({ vendas, produtos }) {
+      const [abaAtiva, setAbaAtiva] = useState('Geral');
+      const hoje = new Date().toLocaleDateString('pt-BR');
+      const mesAtual = new Date().getMonth();
+
+      const vendasFiltradas = vendas.filter(v => {
+          if (abaAtiva === 'Geral') return true;
+          return v.loja === abaAtiva;
+      });
+
+      const vendasHoje = vendasFiltradas.filter(v => new Date(v.data).toLocaleDateString('pt-BR') === hoje);
+      const vendasMes = vendasFiltradas.filter(v => new Date(v.data).getMonth() === mesAtual);
+
+      const faturamentoHoje = vendasHoje.reduce((a,b) => a + Number(b.total), 0);
+      const faturamentoMes = vendasMes.reduce((a,b) => a + Number(b.total), 0);
+      
+      const chartPagamentosData = useMemo(() => {
+          const counts = { 'Dinheiro':0, 'Pix':0, 'Crédito':0, 'Débito':0 };
+          vendasFiltradas.forEach(v => {
+              const m = v.metodo || 'Dinheiro';
+              if(counts[m] !== undefined) counts[m] += Number(v.total);
+          });
+          return {
+              labels: Object.keys(counts),
+              datasets: [{ data: Object.values(counts), backgroundColor: CORES.palette }]
+          };
+      }, [vendasFiltradas]);
+
+      return (
+          <div className="p-4 md:p-6">
+              <div className="flex flex-col md:flex-row justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-chocolate">📊 Painel {abaAtiva}</h2>
+                  <div className="bg-white p-1 rounded-xl shadow border border-gray-200 flex mt-4 md:mt-0">
+                    <button onClick={()=>setAbaAtiva('Geral')} className={`px-4 py-2 rounded-lg font-bold transition ${abaAtiva==='Geral' ? 'bg-chocolate text-white' : 'text-gray-500 hover:bg-gray-100'}`}>Geral</button>
+                    <button onClick={()=>setAbaAtiva('Morada')} className={`px-4 py-2 rounded-lg font-bold transition ${abaAtiva==='Morada' ? 'bg-doceriaPink text-white' : 'text-gray-500 hover:bg-gray-100'}`}>Morada</button>
+                    <button onClick={()=>setAbaAtiva('Novo Horizonte')} className={`px-4 py-2 rounded-lg font-bold transition ${abaAtiva==='Novo Horizonte' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'}`}>Novo Horizonte</button>
+                  </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                  <div className="kpi-card bg-gradient-to-br from-blue-600 to-blue-800">
+                      <div className="kpi-label">Vendas Hoje</div>
+                      <div className="kpi-value">{currency(faturamentoHoje)}</div>
+                  </div>
+                  <div className="kpi-card bg-gradient-to-br from-doceriaPink to-pink-700">
+                      <div className="kpi-label">Faturamento Mês</div>
+                      <div className="kpi-value">{currency(faturamentoMes)}</div>
+                  </div>
+                  <div className="kpi-card bg-gradient-to-br from-chocolate to-gray-900">
+                      <div className="kpi-label">Pedidos Hoje</div>
+                      <div className="kpi-value">{vendasHoje.length}</div>
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+                  <div className="bg-white p-6 rounded-2xl shadow border border-gray-100">
+                      <h3 className="font-bold text-chocolate mb-4">💰 Vendas por Método</h3>
+                      <div style={{ height: '250px' }} className="flex justify-center">
+                          <ChartComponent type="doughnut" data={chartPagamentosData} options={{ responsive: true, maintainAspectRatio: false }} />
+                      </div>
+                  </div>
+                  <div className="bg-white p-6 rounded-2xl shadow border border-gray-100">
+                      <h3 className="font-bold text-gray-700 mb-4">📝 Últimas Vendas</h3>
+                      <div className="overflow-x-auto max-h-[250px] overflow-y-auto">
+                          <table className="w-full text-sm text-left">
+                              <tbody>
+                                  {vendasFiltradas.slice().reverse().slice(0, 8).map(v => (
+                                      <tr key={v.id} className="border-b last:border-0 hover:bg-gray-50">
+                                          <td className="px-4 py-3 text-gray-500 text-xs">{new Date(v.data).toLocaleTimeString().slice(0,5)}</td>
+                                          <td className="px-4 py-3 font-bold text-gray-700">{v.loja}</td>
+                                          <td className="px-4 py-3"><span className="bg-gray-100 px-2 py-1 rounded text-xs">{v.metodo}</span></td>
+                                          <td className="px-4 py-3 text-right font-bold text-chocolate">{currency(v.total)}</td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      );
+  }
+
+  function BIView({ vendas, produtos }) {
+    const dadosGerais = useMemo(() => {
+        const hoje = new Date();
+        const diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+        
+        const labels7Dias = [];
+        const dataVendas7Dias = [];
+        for(let i=6; i>=0; i--) {
+            const d = new Date(); d.setDate(d.getDate() - i);
+            const dateStr = d.toLocaleDateString('pt-BR').slice(0,5);
+            labels7Dias.push(dateStr);
+            const total = vendas.filter(v => new Date(v.data).toLocaleDateString('pt-BR').slice(0,5) === dateStr)
+                                .reduce((acc, v) => acc + Number(v.total), 0);
+            dataVendas7Dias.push(total);
+        }
+
+        const catCount = {};
+        vendas.forEach(v => {
+            v.itens.forEach(item => {
+                const prodReal = produtos.find(p => p.id === item.id);
+                const cat = prodReal ? prodReal.categoria : 'Outros';
+                catCount[cat] = (catCount[cat] || 0) + (Number(item.preco) * Number(item.quantidade)); 
+            });
+        });
+        
+        const semanaCount = [0,0,0,0,0,0,0];
+        vendas.forEach(v => {
+            const dia = new Date(v.data).getDay();
+            semanaCount[dia] += Number(v.total);
+        });
+
+        const horasCount = Array(24).fill(0);
+        vendas.forEach(v => { horasCount[new Date(v.data).getHours()] += 1; });
+        const horasLabels = []; const horasData = [];
+        horasCount.forEach((qtd, hora) => {
+            if(qtd > 0) { horasLabels.push(`${hora}h`); horasData.push(qtd); }
+        });
+
+        return {
+            evolucao: {
+                labels: labels7Dias,
+                datasets: [{
+                    label: 'Faturamento (R$)', data: dataVendas7Dias,
+                    borderColor: CORES.secondary, backgroundColor: 'rgba(216, 27, 96, 0.1)',
+                    borderWidth: 3, tension: 0.4, fill: true, pointBackgroundColor: '#fff', pointRadius: 6
+                }]
+            },
+            categorias: {
+                labels: Object.keys(catCount),
+                datasets: [{ data: Object.values(catCount), backgroundColor: CORES.palette, borderWidth: 0, hoverOffset: 10 }]
+            },
+            semana: {
+                labels: diasSemana,
+                datasets: [{
+                    label: 'Vendas Totais (R$)', data: semanaCount,
+                    backgroundColor: diasSemana.map((d, i) => i === hoje.getDay() ? CORES.secondary : CORES.neutral),
+                    borderRadius: 6
+                }]
+            },
+            horarios: {
+                labels: horasLabels,
+                datasets: [{
+                    label: 'Qtd. Pedidos', data: horasData,
+                    backgroundColor: CORES.accent, borderRadius: 4, barPercentage: 0.6
+                }]
+            }
+        };
+    }, [vendas, produtos]);
+
+    return (
+        <div className="p-4 md:p-6 pb-20">
+            <h2 className="text-2xl font-bold text-chocolate flex items-center gap-2 mb-6"><span className="text-3xl">📈</span> Business Intelligence</h2>
+
+            <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 mb-8 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-2 h-full bg-doceriaPink"></div>
+                <h3 className="font-bold text-gray-700 mb-6 flex items-center gap-2">💵 Evolução do Faturamento (7 Dias)</h3>
+                <div style={{ height: '320px' }}>
+                    <ChartComponent type="line" data={dadosGerais.evolucao} options={{ plugins: { datalabels: { display: false }, legend: { display: false } }, scales: { y: { grid: { color: '#f0f0f0' }, ticks: { callback: (v) => 'R$ ' + v } }, x: { grid: { display: false } } } }} />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
+                    <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2">🍰 Faturamento por Categoria</h3>
+                    <div className="h-[300px] flex justify-center">
+                        <ChartComponent type="doughnut" data={dadosGerais.categorias} options={{ layout: { padding: 20 }, plugins: { legend: { position: 'right' }, datalabels: { color: '#fff', font: { weight: 'bold', size: 11 }, formatter: (val) => 'R$ ' + val.toFixed(0) } } }} />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+  }
+
+  function PDVView({ produtos, carrinho, setCarrinho, finalizarVenda, clientes, user }){
+    const [busca, setBusca] = useState('');
+    const [cat, setCat] = useState('Todos');
+    const [clienteSelecionado, setClienteSelecionado] = useState('');
+    const [lojaAtiva, setLojaAtiva] = useState('Morada');
+    const [modalPagamento, setModalPagamento] = useState(false);
+    
+    useEffect(() => {
+        if (user.role === 'morada') setLojaAtiva('Morada');
+        else if (user.role === 'horizonte') setLojaAtiva('Novo Horizonte');
+    }, [user]);
+
+    const [mpStatus, setMpStatus] = useState('idle'); 
+    const [configMP, setConfigMP] = useState(null);
+
+    useEffect(() => {
+        const key = lojaAtiva === 'Morada' ? 'mp_config_Morada' : 'mp_config_NH';
+        setConfigMP(storageGet(key, null));
+    }, [lojaAtiva]);
+
+    const categorias = ['Todos', ...new Set(produtos.map(p => p.categoria))];
+    const filtrados = produtos.filter(p => {
+        return p.nome.toLowerCase().includes(busca.toLowerCase()) && (cat === 'Todos' || p.categoria === cat);
+    });
+
+    function getEstoque(p) { return lojaAtiva === 'Morada' ? p.estoque.morada : p.estoque.novoHorizonte; }
+
+    function add(p) {
+        const est = getEstoque(p);
+        const itemCarrinho = carrinho.find(i => i.id === p.id);
+        const qtdCarrinho = itemCarrinho ? itemCarrinho.quantidade : 0;
+        
+        // BLOQUEIO RIGIDO DE ESTOQUE
+        if(est <= 0 || qtdCarrinho >= est) {
+            alert(`🚫 ESTOQUE INSUFICIENTE!\nDisponível: ${est} un.`);
+            return;
+        }
+        
+        if(itemCarrinho) setCarrinho(carrinho.map(i => i.id===p.id ? {...i, quantidade: i.quantidade+1} : i));
+        else setCarrinho([...carrinho, {...p, quantidade:1}]);
+    }
+    
+    function remove(id) { setCarrinho(carrinho.filter(i => i.id !== id)); }
+    const total = carrinho.reduce((a, b) => a + (Number(b.preco) * Number(b.quantidade)), 0);
+
+    async function processarPagamentoCartao(tipo) {
+        setMpStatus('processing');
+        setTimeout(() => {
+            setMpStatus('success');
+            setTimeout(() => {
+                finalizarVenda(total, clienteSelecionado, lojaAtiva, tipo);
+                setModalPagamento(false);
+                setMpStatus('idle');
+            }, 1500);
+        }, 2000); 
+    }
+
+    return (
+      <div className="flex flex-col md:flex-row h-full overflow-hidden relative">
+        {/* ÁREA DE PRODUTOS (Esquerda no PC, Topo no Mobile) */}
+        <div className="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden">
+            {/* Barra Topo: Busca e Filtros */}
+            <div className="p-3 bg-white shadow-sm border-b z-10 flex flex-col gap-2">
+                <div className="flex gap-2 items-center">
+                   <div className="flex-1 relative">
+                        <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Buscar doce..." className="w-full p-2 pl-3 rounded-lg border bg-gray-100 outline-none focus:ring-2 focus:ring-doceriaPink" />
+                   </div>
+                   <select value={lojaAtiva} disabled={user.role!=='admin'} onChange={e=>{setLojaAtiva(e.target.value);setCarrinho([])}} className="p-2 rounded-lg border bg-white font-bold text-xs">
+                        <option value="Morada">🏠 Morada</option>
+                        <option value="Novo Horizonte">🌅 NH</option>
+                   </select>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    {categorias.map(c => (<button key={c} onClick={()=>setCat(c)} className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition ${cat===c ? 'bg-chocolate text-white' : 'bg-gray-200 text-gray-600'}`}>{c}</button>))}
+                </div>
+            </div>
+
+            {/* Grid de Produtos (Scrollável) */}
+            <div className="flex-1 overflow-y-auto p-2 pb-24 md:pb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {filtrados.map(p => {
+                        const est = getEstoque(p);
+                        const semEstoque = est <= 0;
+                        return (
+                            <div key={p.id} onClick={()=>add(p)} className={`relative bg-white p-3 rounded-xl border shadow-sm active:scale-95 transition flex flex-col items-center text-center select-none ${semEstoque ? 'opacity-60 grayscale cursor-not-allowed' : 'cursor-pointer hover:border-doceriaPink'}`}>
+                                {semEstoque && <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10"><span className="bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded">ESGOTADO</span></div>}
+                                <div className="text-3xl mb-1">{p.emoji}</div>
+                                <div className="font-bold text-gray-800 text-xs leading-tight line-clamp-2 h-8 flex items-center">{p.nome}</div>
+                                <div className="text-doceriaPink font-bold text-sm mt-1">{currency(p.preco)}</div>
+                                <div className={`text-[10px] mt-1 font-bold ${est < 10 ? 'text-red-500' : 'text-gray-400'}`}>Est: {est}</div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+
+        {/* ÁREA DO CARRINHO (Direita no PC, Fixa embaixo no Mobile) */}
+        <div className="w-full md:w-96 bg-white border-t md:border-t-0 md:border-l border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-none z-20 flex flex-col md:h-full absolute bottom-[58px] md:static h-[35vh] md:h-auto">
+            <div className="p-2 bg-chocolate text-white flex justify-between items-center md:rounded-tl-xl">
+                <div className="flex items-center gap-2"><span className="text-xl">🛒</span> <span className="font-bold text-sm">CUPOM</span></div>
+                <span className="bg-white/20 text-xs px-2 py-0.5 rounded font-bold">{carrinho.length} itens</span>
+            </div>
+
+            {/* Lista de Itens (Scrollável) */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-gray-50">
+                {carrinho.length === 0 && <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm opacity-50"><span className="text-4xl mb-2">🛍️</span>Vazio</div>}
+                {carrinho.map(item => (
+                    <div key={item.id} className="flex justify-between items-center bg-white p-2 rounded border border-gray-100 shadow-sm text-sm">
+                        <div className="flex-1">
+                            <div className="font-bold text-gray-800 line-clamp-1">{item.nome}</div>
+                            <div className="text-xs text-gray-500">{item.quantidade}x {currency(item.preco)}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="font-bold text-chocolate">{currency(item.preco * item.quantidade)}</span>
+                            <button onClick={()=>remove(item.id)} className="w-6 h-6 flex items-center justify-center bg-red-100 text-red-500 rounded font-bold">×</button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            
+            {/* Totais e Botão Pagar */}
+            <div className="p-3 bg-white border-t space-y-2">
+                <select value={clienteSelecionado} onChange={(e) => setClienteSelecionado(e.target.value)} className="w-full p-2 bg-gray-50 border rounded text-sm outline-none">
+                    <option value="">👤 Cliente Avulso</option>
+                    {clientes.map(c => (<option key={c.id} value={c.id}>{c.nome}</option>))}
+                </select>
+                <div className="flex justify-between items-center">
+                    <span className="text-gray-500 text-sm font-bold uppercase">Total a Pagar</span>
+                    <span className="text-2xl font-extrabold text-chocolate">{currency(total)}</span>
+                </div>
+                <button onClick={()=>setModalPagamento(true)} disabled={carrinho.length===0} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition text-lg flex justify-center items-center gap-2">
+                    <span>✅</span> FINALIZAR
+                </button>
+            </div>
+        </div>
+
+        {modalPagamento && (
+            <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl relative overflow-hidden">
+                    {mpStatus === 'idle' && (
+                        <>
+                            <h3 className="text-xl font-bold text-chocolate mb-4 text-center">Pagamento</h3>
+                            <div className="text-center text-3xl font-bold text-gray-800 mb-6">{currency(total)}</div>
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                                <button onClick={()=>{ finalizarVenda(total, clienteSelecionado, lojaAtiva, 'Dinheiro'); setModalPagamento(false); }} className="p-4 bg-green-100 text-green-800 rounded-xl font-bold hover:bg-green-200 flex flex-col items-center"><span>💵</span> Dinheiro</button>
+                                <button onClick={()=>processarPagamentoCartao('Pix')} className="p-4 bg-teal-100 text-teal-800 rounded-xl font-bold hover:bg-teal-200 flex flex-col items-center"><span>💠</span> Pix</button>
+                                <button onClick={()=>processarPagamentoCartao('Débito')} className="p-4 bg-blue-100 text-blue-800 rounded-xl font-bold hover:bg-blue-200 flex flex-col items-center"><span>💳</span> Débito</button>
+                                <button onClick={()=>processarPagamentoCartao('Crédito')} className="p-4 bg-mpBlue text-white rounded-xl font-bold hover:bg-blue-500 flex flex-col items-center shadow-lg"><span>💳</span> Crédito</button>
+                            </div>
+                            <button onClick={()=>setModalPagamento(false)} className="w-full py-3 bg-gray-200 text-gray-700 font-bold rounded-xl">Cancelar</button>
+                        </>
+                    )}
+                    {mpStatus === 'processing' && (
+                         <div className="text-center py-8"><h3 className="text-xl font-bold text-mpBlue animate-pulse">Processando...</h3></div>
+                    )}
+                    {mpStatus === 'success' && (
+                         <div className="text-center py-8"><h3 className="text-xl font-bold text-green-600">Sucesso! ✅</h3></div>
+                    )}
+                </div>
+            </div>
+        )}
+      </div>
+    );
+  }
+
+  function FidelidadeView({ clientes, setClientes }) {
+      const [busca, setBusca] = useState('');
+      const [modalCliente, setModalCliente] = useState(null); 
+      const [modalDetalhes, setModalDetalhes] = useState(null); 
+
+      const niveis = [
+        { nome: 'Bronze', min: 0, cor: 'text-bronze bg-orange-100', icon: '🥉' },
+        { nome: 'Prata', min: 100, cor: 'text-gray-500 bg-gray-100', icon: '🥈' },
+        { nome: 'Ouro', min: 500, cor: 'text-yellow-600 bg-yellow-100', icon: '🥇' },
+        { nome: 'Diamante', min: 1000, cor: 'text-cyan-600 bg-cyan-100', icon: '💎' },
+      ];
+
+      const filtrados = clientes.filter(c => c.nome.toLowerCase().includes(busca.toLowerCase()) || c.telefone.includes(busca));
+      
+      function getNivel(total) {
+        return niveis.slice().reverse().find(n => total >= n.min) || niveis[0];
+      }
+
+      function handleAddCliente(e) {
+          e.preventDefault();
+          const novo = { 
+            id: uid(), nome: e.target.nome.value, telefone: e.target.tel.value, 
+            saldoPontos: 0, totalAcumulado: 0, nivel: 'Bronze', historico: []
+          };
+          setClientes([...clientes, novo]);
+          setModalCliente(null);
+      }
+
+      return (
+          <div className="p-4 md:p-6 h-full flex flex-col pb-24">
+              <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl md:text-2xl font-bold text-chocolate flex items-center gap-2">💎 Clube Fidelidade</h2>
+                  <button onClick={() => setModalCliente(true)} className="px-4 py-2 bg-doceriaPink text-white rounded-xl font-bold shadow hover:bg-pink-600">+ Novo</button>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex-1 flex flex-col overflow-hidden">
+                  <div className="p-3 border-b bg-gray-50">
+                    <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Buscar cliente..." className="w-full p-3 bg-white border border-gray-200 rounded-xl outline-none" />
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {filtrados.map(c => {
+                           const nivelObj = getNivel(c.totalAcumulado);
+                           return (
+                              <div key={c.id} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition cursor-pointer relative" onClick={() => setModalDetalhes(c)}>
+                                  <div className={`absolute top-0 right-0 px-2 py-1 rounded-bl-xl text-[10px] font-bold ${nivelObj.cor}`}>{nivelObj.icon} {nivelObj.nome}</div>
+                                  <div className="font-bold text-gray-800">{c.nome}</div>
+                                  <div className="text-xs text-gray-500 mb-2">{c.telefone}</div>
+                                  <div className="flex justify-between items-end">
+                                      <div className="text-2xl font-extrabold text-doceriaPink">{c.saldoPontos}</div>
+                                      <div className="text-xs text-gray-400">Pts</div>
+                                  </div>
+                              </div>
+                           );
+                        })}
+                    </div>
+                  </div>
+              </div>
+
+              {modalCliente && (
+                  <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+                      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+                          <h3 className="text-xl font-bold text-chocolate mb-4">Novo Cliente</h3>
+                          <form onSubmit={handleAddCliente} className="space-y-4">
+                              <input name="nome" placeholder="Nome" required className="w-full p-3 border rounded-lg bg-gray-50" />
+                              <input name="tel" placeholder="Telefone" required className="w-full p-3 border rounded-lg bg-gray-50" />
+                              <button className="w-full py-3 bg-doceriaPink text-white rounded-xl font-bold">Cadastrar</button>
+                          </form>
+                          <button onClick={() => setModalCliente(false)} className="w-full py-3 text-gray-500 mt-2 font-bold">Cancelar</button>
+                      </div>
+                  </div>
+              )}
+              
+              {modalDetalhes && (
+                  <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+                      <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
+                          <button onClick={()=>setModalDetalhes(null)} className="absolute top-2 right-2 text-2xl">×</button>
+                          <h2 className="text-2xl font-bold text-chocolate mb-1">{modalDetalhes.nome}</h2>
+                          <p className="text-gray-500 mb-4">Saldo: {modalDetalhes.saldoPontos} pontos</p>
+                          <div className="bg-gray-50 p-3 rounded h-40 overflow-y-auto mb-4 text-sm">
+                              {modalDetalhes.historico?.map((h,i)=>(<div key={i} className="flex justify-between py-1 border-b"><span>{h.desc}</span><span className={h.tipo==='entrada'?'text-green-600':'text-red-500'}>{h.tipo==='entrada'?'+':'-'}{h.valor}</span></div>))}
+                          </div>
+                          <button onClick={()=>setModalDetalhes(null)} className="w-full bg-gray-200 py-2 rounded font-bold">Fechar</button>
+                      </div>
+                  </div>
+              )}
+          </div>
+      );
+  }
+
+  /* ================= MAQUININHA VIEW ================= */
+  function MaquininhaView() {
+    const [lojaAlvo, setLojaAlvo] = useState('Morada');
+    const [config, setConfig] = useState({ deviceId: '', apiUrl: '' });
+    
+    useEffect(() => {
+        const key = lojaAlvo === 'Morada' ? 'mp_config_Morada' : 'mp_config_NH';
+        setConfig(storageGet(key, { deviceId: '', apiUrl: '' }));
+    }, [lojaAlvo]);
+
+    function handleSave(e) {
+        e.preventDefault();
+        const key = lojaAlvo === 'Morada' ? 'mp_config_Morada' : 'mp_config_NH';
+        storageSet(key, config);
+        alert(`Configuração Salva para ${lojaAlvo}!`);
+    }
+
+    return (
+      <div className="p-6 h-full flex flex-col pb-20">
+        <h2 className="text-2xl font-bold text-mpBlue mb-6">☁️ Integração Point Smart</h2>
+        <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 max-w-2xl mx-auto w-full">
+            <div className="flex gap-4 mb-6">
+                <button onClick={()=>setLojaAlvo('Morada')} className={`flex-1 p-3 rounded-lg font-bold border-2 ${lojaAlvo==='Morada' ? 'border-mpBlue bg-blue-50 text-mpBlue' : 'border-gray-200'}`}>Morada</button>
+                <button onClick={()=>setLojaAlvo('Novo Horizonte')} className={`flex-1 p-3 rounded-lg font-bold border-2 ${lojaAlvo==='Novo Horizonte' ? 'border-mpBlue bg-blue-50 text-mpBlue' : 'border-gray-200'}`}>NH</button>
+            </div>
+            
+            <form onSubmit={handleSave} className="space-y-4">
+                <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase">Device ID (Serial)</label>
+                    <input required value={config.deviceId} onChange={e=>setConfig({...config, deviceId: e.target.value})} className="w-full p-3 bg-gray-50 border rounded-lg font-mono" placeholder="Ex: 8880000123456" />
+                </div>
+                <button className="w-full py-4 bg-mpBlue text-white rounded-xl font-bold shadow hover:bg-blue-600 transition">💾 Salvar Conexão</button>
+            </form>
+        </div>
+      </div>
+    );
+  }
+  
+  /* ================= RELATÓRIOS CONTÁBEIS ================= */
+  function RelatoriosView({ vendas }) {
+      const [dataInicio, setDataInicio] = useState(new Date().toISOString().slice(0,10));
+      const [dataFim, setDataFim] = useState(new Date().toISOString().slice(0,10));
+      
+      const vendasPeriodo = useMemo(() => {
+          const inicio = new Date(dataInicio + 'T00:00:00');
+          const fim = new Date(dataFim + 'T23:59:59');
+          return vendas.filter(v => { const d = new Date(v.data); return d >= inicio && d <= fim; });
+      }, [vendas, dataInicio, dataFim]);
+
+      // Cálculos Corrigidos
+      const resumo = useMemo(() => {
+          let total = 0;
+          let metodos = { 'Dinheiro':0, 'Pix':0, 'Crédito':0, 'Débito':0 };
+          let lojas = { 'Morada':0, 'Novo Horizonte':0 };
+          
+          vendasPeriodo.forEach(v => {
+              const valor = Number(v.total || 0);
+              total += valor;
+              
+              const m = v.metodo || 'Dinheiro';
+              if(metodos[m] !== undefined) metodos[m] += valor;
+              else metodos['Dinheiro'] += valor;
+              
+              const l = v.loja || 'Morada';
+              if(lojas[l] !== undefined) lojas[l] += valor;
+          });
+
+          return { total, metodos, lojas };
+      }, [vendasPeriodo]);
+
+      return (
+          <div className="p-4 md:p-6 pb-20">
+              <h2 className="text-2xl font-bold text-chocolate mb-6 flex items-center gap-2">📁 Contabilidade</h2>
+              
+              <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-100 mb-6">
+                  <div className="flex flex-col md:flex-row gap-4 items-end">
+                      <div className="w-full"><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Início</label><input type="date" value={dataInicio} onChange={e=>setDataInicio(e.target.value)} className="w-full p-3 border rounded-xl bg-gray-50 font-bold text-gray-700" /></div>
+                      <div className="w-full"><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fim</label><input type="date" value={dataFim} onChange={e=>setDataFim(e.target.value)} className="w-full p-3 border rounded-xl bg-gray-50 font-bold text-gray-700" /></div>
+                  </div>
+              </div>
+
+              {/* CARD DE VISUALIZAÇÃO PRÉVIA */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  <div className="bg-white p-5 rounded-2xl shadow border-l-4 border-l-green-600">
+                      <h3 className="text-gray-500 font-bold text-sm uppercase mb-2">Total do Período</h3>
+                      <div className="text-3xl font-extrabold text-gray-800">{currency(resumo.total)}</div>
+                      <div className="mt-2 text-sm text-gray-600">
+                         <div className="flex justify-between"><span>Morada:</span> <b>{currency(resumo.lojas['Morada'])}</b></div>
+                         <div className="flex justify-between"><span>NH:</span> <b>{currency(resumo.lojas['Novo Horizonte'])}</b></div>
+                      </div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-2xl shadow border-l-4 border-l-blue-500">
+                      <h3 className="text-gray-500 font-bold text-sm uppercase mb-2">Por Método</h3>
+                      <div className="space-y-1 text-sm">
+                          <div className="flex justify-between"><span>💳 Crédito</span> <b>{currency(resumo.metodos['Crédito'])}</b></div>
+                          <div className="flex justify-between"><span>💳 Débito</span> <b>{currency(resumo.metodos['Débito'])}</b></div>
+                          <div className="flex justify-between"><span>💠 Pix</span> <b>{currency(resumo.metodos['Pix'])}</b></div>
+                          <div className="flex justify-between"><span>💵 Dinheiro</span> <b>{currency(resumo.metodos['Dinheiro'])}</b></div>
+                      </div>
+                  </div>
+              </div>
+
+              <button onClick={() => gerarCSVContabil(vendas, dataInicio, dataFim)} className="w-full py-4 bg-chocolate text-white font-bold rounded-xl shadow hover:bg-[#4a332a] text-lg">📄 Baixar Relatório Fiscal (Excel)</button>
+          </div>
+      )
+  }
+
+  function Sidebar({selected, setSelected, menuItems}){
+    return (
+      <aside className="w-64 bg-chocolate text-white hidden md:flex flex-col shadow-xl z-20 h-full">
+        <div className="p-6 flex flex-col items-center border-b border-white/10"><div className="text-4xl mb-2">🧁</div><div className="font-bold tracking-widest text-doceriaCream">WAGNER DOCES</div></div>
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          {menuItems.map(i=>(
+            <button key={i.id} onClick={()=>setSelected(i.id)} className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all ${selected===i.id ? 'bg-doceriaPink text-white shadow-lg font-bold' : 'text-doceriaCream/70 hover:bg-white/10 hover:text-white'}`}>
+              <span className="text-xl">{i.icon}</span><span>{i.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="p-4 text-center text-xs text-white/30">v11.2 Estoque Fix</div>
+      </aside>
+    );
+  }
+
+  function BottomNav({ selected, setSelected, menuItems }) {
+      return (
+        <div className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 flex justify-around p-2 z-40 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+            {menuItems.map(i => (
+                <button key={i.id} onClick={() => setSelected(i.id)} className={`flex flex-col items-center p-2 rounded-lg w-full ${selected === i.id ? 'text-doceriaPink' : 'text-gray-400'}`}>
+                    <span className="text-2xl mb-1">{i.icon}</span>
+                    <span className="text-[10px] font-bold">{i.label}</span>
+                </button>
+            ))}
+        </div>
+      );
+  }
+
+  function Header({user, onLogout}){
+    return (
+      <header className="bg-white shadow-sm h-16 flex flex-shrink-0 items-center justify-between px-4 md:px-6 border-b border-chocolate/10 relative z-30">
+        <div className="flex items-center gap-4"><h1 className="text-lg md:text-xl font-bold text-chocolate tracking-tight">WAGNER <span className="text-doceriaPink">PDV</span></h1></div>
+        <div className="flex items-center gap-4 text-sm">
+            <div className="hidden md:flex items-center gap-2 text-gray-600"><span>👤 {user.name}</span> <span className="text-xs bg-gray-200 px-2 py-0.5 rounded-full">{user.role}</span></div>
+            <button onClick={onLogout} className="text-red-500 hover:text-red-700 font-bold border border-red-200 px-3 py-1 rounded-lg">Sair</button>
+        </div>
+      </header>
+    );
+  }
+
+  /* ================= PRODUTOS VIEW (AGORA COM ALERTA 10 UN.) ================= */
+  function ProdutosView({ produtos, onAdd, onEdit, onDelete, user }) {
+      const [adding, setAdding] = useState(false);
+      const [editingProduct, setEditingProduct] = useState(null);
+
+      const getEstoque = (p, loja) => (p.estoque && p.estoque[loja] !== undefined) ? p.estoque[loja] : 0;
+      const readOnly = user.role !== 'admin';
+
+      return (
+          <div className="p-4 md:p-6 pb-20">
+              <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-chocolate">Meus Doces</h2>
+              {!readOnly && <button onClick={()=>setAdding(true)} className="px-4 py-2 bg-green-600 text-white rounded-lg font-bold shadow">+ Novo</button>}
+              </div>
+              <div className="bg-white rounded-xl shadow overflow-hidden border border-gray-100 overflow-x-auto">
+                  <table className="w-full text-sm">
+                      <thead className="bg-chocolate text-white">
+                        <tr>
+                            <th className="p-4 text-left">Produto</th>
+                            <th className="p-4 text-right">Preço</th>
+                            <th className="p-4 text-center">MORADA</th>
+                            <th className="p-4 text-center">NH</th>
+                            {!readOnly && <th className="p-4 text-center">Ações</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                          {produtos.map(p => {
+                            const estMorada = getEstoque(p,'morada');
+                            const estNH = getEstoque(p,'novoHorizonte');
+                            // Alerta se ALGUMA loja tiver 10 ou menos
+                            const alerta = estMorada <= 10 || estNH <= 10;
+                            
+                            return (
+                                <tr key={p.id} className={`hover:bg-orange-50 ${alerta ? 'bg-red-50' : ''}`}>
+                                    <td className="p-4 font-bold text-gray-700 flex items-center gap-2">
+                                        <span className="text-xl">{p.emoji}</span> 
+                                        <div>
+                                            {p.nome}
+                                            {alerta && <div className="text-[10px] text-red-600 uppercase font-extrabold animate-pulse">⚠️ Precisa Repor</div>}
+                                        </div>
+                                    </td>
+                                    <td className="p-4 text-right">{currency(p.preco)}</td>
+                                    
+                                    <td className="p-4 text-center">
+                                        <div className={`font-bold py-1 px-2 rounded ${estMorada<=10 ? 'bg-red-200 text-red-800' : 'bg-pink-50 text-doceriaPink'}`}>
+                                            {estMorada}
+                                        </div>
+                                    </td>
+                                    
+                                    <td className="p-4 text-center">
+                                        <div className={`font-bold py-1 px-2 rounded ${estNH<=10 ? 'bg-red-200 text-red-800' : 'bg-blue-50 text-blue-600'}`}>
+                                            {estNH}
+                                        </div>
+                                    </td>
+                                    
+                                    {!readOnly && <td className="p-4 text-center flex gap-2 justify-center">
+                                        <button onClick={()=>setEditingProduct(p)} className="text-blue-500 font-bold p-1">✏️</button>
+                                        <button onClick={()=>onDelete(p.id)} className="text-red-500 font-bold p-1">🗑️</button>
+                                    </td>}
+                                </tr>
+                            );
+                          })}
+                      </tbody>
+                  </table>
+              </div>
+              {adding && <ModalProduto onClose={()=>setAdding(false)} onSave={(p)=>{ onAdd(p); setAdding(false); }} />}
+              {editingProduct && <ModalProduto productToEdit={editingProduct} onClose={()=>setEditingProduct(null)} onSave={(p)=>{ onEdit(p); setEditingProduct(null); }} />}
+          </div>
+      )
+  }
+
+  function ModalProduto({ onClose, onSave, productToEdit }) {
+    const isEditing = !!productToEdit;
+    const [form, setForm] = useState({ 
+        nome: '', preco: '', custo: '', categoria: 'Geral', emoji: '🍬', limiteAlerta: 10, estoque: { morada: 0, novoHorizonte: 0 } 
+    });
+    const [em, setEm] = useState(0); 
+    const [enh, setEnh] = useState(0);
+    
+    useEffect(() => {
+        if (productToEdit) {
+            setForm({ ...productToEdit, preco: productToEdit.preco, custo: productToEdit.custo || 0 });
+            setEm(productToEdit.estoque ? productToEdit.estoque.morada : 0);
+            setEnh(productToEdit.estoque ? productToEdit.estoque.novoHorizonte : 0);
+        }
+    }, [productToEdit]);
+
+    function save(e){ 
+        e.preventDefault(); 
+        onSave({
+            ...form, id: isEditing ? productToEdit.id : uid(), preco: parseFloat(form.preco), 
+            limiteAlerta: 10, estoque: { morada: parseInt(em), novoHorizonte: parseInt(enh) }
+        }); 
+    }
+
+    return (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+            <form onSubmit={save} className="bg-white p-6 rounded-xl w-full max-w-sm space-y-3">
+                <h3 className="font-bold text-chocolate text-lg mb-2">{isEditing ? 'Editar' : 'Novo'} Produto</h3>
+                <div className="grid grid-cols-4 gap-2">
+                    <input className="col-span-1 p-2 border rounded text-center text-xl" value={form.emoji} onChange={e=>setForm({...form, emoji: e.target.value})} />
+                    <input placeholder="Nome" required value={form.nome} className="col-span-3 p-2 border rounded" onChange={e=>setForm({...form, nome: e.target.value})} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                    <input placeholder="Preço" type="number" step="0.01" value={form.preco} required className="w-full p-2 border rounded" onChange={e=>setForm({...form, preco: e.target.value})} />
+                    <input placeholder="Custo" type="number" step="0.01" value={form.custo} className="w-full p-2 border rounded" onChange={e=>setForm({...form, custo: e.target.value})} />
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t mt-2">
+                    <div className="bg-pink-50 p-2 rounded"><label className="text-xs font-bold text-doceriaPink block">Morada</label><input type="number" value={em} className="w-full p-1 border border-doceriaPink rounded text-center" onChange={e=>setEm(e.target.value)} /></div>
+                    <div className="bg-blue-50 p-2 rounded"><label className="text-xs font-bold text-blue-600 block">NH</label><input type="number" value={enh} className="w-full p-1 border border-blue-500 rounded text-center" onChange={e=>setEnh(e.target.value)} /></div>
+                </div>
+                <button className="w-full py-3 bg-doceriaPink text-white font-bold rounded mt-4">Salvar</button>
+                <button type="button" onClick={onClose} className="w-full py-2 text-gray-500">Cancelar</button>
+            </form>
+        </div>
+    )
+  }
+
+  function ModalCupom({ venda, onClose }) {
+    if(!venda) return null;
+    return (
+      <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4">
+        <div className="bg-white rounded-lg shadow-2xl w-full max-w-sm overflow-hidden">
+            <div id="cupom-imprecao" className="p-6 bg-[#fffdf0] font-mono text-xs text-gray-900 tracking-tighter leading-tight shadow-inner">
+                <div className="text-center border-b border-dashed border-gray-800 pb-2 mb-2">
+                    <h2 className="font-bold text-lg uppercase tracking-normal">WAGNER Doces</h2>
+                    <p className="font-bold">{venda.loja}</p>
+                </div>
+                <div className="mb-2 text-[10px]"><p>Data: {new Date(venda.data).toLocaleString()}</p><p>ID: {venda.id}</p></div>
+                <table className="w-full text-[10px] mb-2">
+                    <thead><tr className="border-b border-dashed border-gray-800"><th className="text-left py-1">Qtd Item</th><th className="text-right py-1">Total</th></tr></thead>
+                    <tbody>{venda.itens.map((item, idx) => (<tr key={idx}><td className="py-1">{item.quantidade}x {item.nome}</td><td className="text-right py-1">{currency(item.preco * item.quantidade)}</td></tr>))}</tbody>
+                </table>
+                <div className="border-t border-dashed border-gray-800 pt-2 flex justify-between items-center text-sm"><span>TOTAL R$</span><span className="font-bold text-lg">{Number(venda.total).toFixed(2).replace('.',',')}</span></div>
+                <div className="mt-2 text-center font-bold text-xs border p-1 rounded border-gray-400">PAGAMENTO: {(venda.metodo || 'DINHEIRO').toUpperCase()}</div>
+                <div className="text-center mt-4 text-[10px] uppercase"><p>Obrigado pela preferência!</p></div>
+            </div>
+            <div className="flex p-4 gap-2 bg-gray-100 border-t"><button onClick={onClose} className="flex-1 py-2 bg-gray-300 rounded font-bold">Fechar</button><button onClick={()=>window.print()} className="flex-1 py-2 bg-chocolate text-white rounded font-bold">🖨️ Imprimir</button></div>
+        </div>
+      </div>
+    );
+  }
+
+  function Login({onLogin}){
+    const [u, setU] = useState('');
+    const [p, setP] = useState('');
+    
+    function submit(e){ 
+        e.preventDefault(); 
+        if(u === 'admin' && p === '1234') onLogin({name: 'Admin', role: 'admin'}); 
+        else if(u === 'morada' && p === '1234') onLogin({name: 'Loja Morada', role: 'morada'});
+        else if(u === 'horizonte' && p === '1234') onLogin({name: 'Loja NH', role: 'horizonte'});
+        else alert('Usuário ou senha incorretos.'); 
+    }
+    
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-chocolate via-dark to-chocolate">
+        <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-md w-full border-4 border-doceriaCream">
+            <h1 className="text-2xl font-extrabold text-chocolate text-center mb-1">WAGNER DOCES</h1>
+            <p className="text-center text-gray-400 mb-6 text-sm">Sistema PDV Mobile v11.2</p>
+            <form onSubmit={submit} className="space-y-4">
+              <input className="w-full p-3 border border-chocolateLight rounded-xl outline-none" placeholder="Usuário" value={u} onChange={e=>setU(e.target.value)} />
+              <input type="password" className="w-full p-3 border border-chocolateLight rounded-xl outline-none" placeholder="Senha" value={p} onChange={e=>setP(e.target.value)} />
+              <button className="w-full py-3 bg-doceriaPink text-white rounded-xl font-bold shadow-lg text-lg">ENTRAR</button>
+            </form>
+            <div className="mt-4 text-center text-xs text-gray-400">
+                <p>admin / 1234 (Geral)</p>
+                <p>morada / 1234 (Loja 1)</p>
+                <p>horizonte / 1234 (Loja 2)</p>
+            </div>
+        </div>
+      </div>
+    );
+  }
+
+  function App(){
+    const [user, setUser] = useState(null);
+    const [page, setPage] = useState('dashboard');
+    const [produtos, setProdutos] = useState([]);
+    const [clientes, setClientes] = useState([]); 
+    const [carrinho, setCarrinho] = useState([]);
+    const [vendas, setVendas] = useState([]);
+    const [cupomVenda, setCupomVenda] = useState(null);
+
+    useEffect(() => {
+        const prods = storageGet('produtos', initialProducts);
+        const prodsFixed = prods.map(p => {
+             const base = { ...p };
+             if(typeof p.estoque === 'number') base.estoque = { morada: p.estoque, novoHorizonte: 0 };
+             if(!p.limiteAlerta) base.limiteAlerta = 10; // Forçando 10 como padrão
+             return base;
+        });
+        setProdutos(prodsFixed);
+        setClientes(storageGet('clientes', initialClients)); 
+        setVendas(storageGet('vendas', []));
+    }, []);
+
+    useEffect(() => {
+        if(user && user.role !== 'admin') {
+            setPage('pdv');
+        } else {
+            setPage('dashboard');
+        }
+    }, [user]);
+
+    useEffect(() => { if(produtos.length > 0) storageSet('produtos', produtos); }, [produtos]);
+    useEffect(() => { if(vendas.length > 0) storageSet('vendas', vendas); }, [vendas]);
+    useEffect(() => { if(clientes.length > 0) storageSet('clientes', clientes); }, [clientes]);
+
+    function handleAddProduct(prod) { setProdutos([...produtos, prod]); }
+    function handleEditProduct(prod) { setProdutos(produtos.map(p => p.id === prod.id ? prod : p)); }
+    function handleDeleteProduct(id) { if(confirm("Excluir?")) setProdutos(produtos.filter(p => p.id !== id)); }
+
+    function handleFinalizarVenda(total, clienteId, loja, metodo) {
+        const novosProdutos = produtos.map(prod => {
+            const itemCarrinho = carrinho.find(c => c.id === prod.id);
+            if(itemCarrinho) {
+                const novoEstoque = { ...prod.estoque };
+                if(loja === 'Morada') novoEstoque.morada -= itemCarrinho.quantidade;
+                else novoEstoque.novoHorizonte -= itemCarrinho.quantidade;
+                return { ...prod, estoque: novoEstoque };
+            }
+            return prod;
+        });
+
+        if(clienteId) {
+             const pts = Math.floor(total);
+             setClientes(clientes.map(c => {
+                 if(c.id == clienteId) {
+                     const novoSaldo = (c.saldoPontos || 0) + pts;
+                     const novoAcumulado = (c.totalAcumulado || 0) + pts;
+                     return { 
+                         ...c, saldoPontos: novoSaldo, totalAcumulado: novoAcumulado,
+                         historico: [{ data: new Date().toISOString(), tipo: 'entrada', valor: pts, desc: `Compra na loja ${loja}` }, ...(c.historico||[])]
+                     };
+                 }
+                 return c;
+             }));
+        }
+
+        const novaVenda = { 
+            id: uid(), data: new Date().toISOString(), itens: carrinho, total: Number(total), 
+            metodo: metodo, clienteId: clienteId, loja: loja 
+        };
+        
+        setProdutos(novosProdutos);
+        setVendas([...vendas, novaVenda]);
+        setCarrinho([]);
+        setCupomVenda(novaVenda);
+    }
+
+    if(!user) return <Login onLogin={setUser} />;
+
+    let menuItems = [];
+    if(user.role === 'admin') {
+        menuItems = [
+          { id:'dashboard', icon:'🍰', label:'Painel' },
+          { id:'pdv', icon:'🛒', label:'Caixa' },
+          { id:'produtos', icon:'🍩', label:'Doces' },
+          { id:'fidelidade', icon:'💎', label:'Fidelidade' },
+          { id:'bi', icon:'📈', label:'B.I.' },
+          { id:'maquininha', icon:'💳', label:'Config' },
+          { id:'relatorios', icon:'📂', label:'Fiscal' },
+        ];
+    } else {
+        menuItems = [
+          { id:'pdv', icon:'🛒', label:'Caixa' },
+          { id:'fidelidade', icon:'💎', label:'Fidelidade' },
+          { id:'produtos', icon:'🍩', label:'Consultar' },
+        ];
+    }
+
+    return (
+      <div className="app-container">
+        <Sidebar selected={page} setSelected={setPage} menuItems={menuItems} />
+        <div className="main-content-area">
+          <Header user={user} onLogout={()=>setUser(null)} />
+          <div className="scrollable-content bg-doceriaCream/30">
+            {page === 'dashboard' && user.role === 'admin' && <DashboardView vendas={vendas} produtos={produtos} />}
+            {page === 'bi' && user.role === 'admin' && <BIView vendas={vendas} produtos={produtos} />}
+            {page === 'pdv' && <PDVView user={user} produtos={produtos} carrinho={carrinho} setCarrinho={setCarrinho} finalizarVenda={handleFinalizarVenda} clientes={clientes} />}
+            {page === 'fidelidade' && <FidelidadeView clientes={clientes} setClientes={setClientes} />}
+            {page === 'maquininha' && user.role === 'admin' && <MaquininhaView />}
+            {page === 'produtos' && <ProdutosView user={user} produtos={produtos} onAdd={handleAddProduct} onEdit={handleEditProduct} onDelete={handleDeleteProduct} />}
+            {page === 'relatorios' && user.role === 'admin' && <RelatoriosView vendas={vendas} />}
+          </div>
+          <BottomNav selected={page} setSelected={setPage} menuItems={menuItems} />
+        </div>
+        {cupomVenda && <ModalCupom venda={cupomVenda} onClose={()=>setCupomVenda(null)} />}
+      </div>
+    );
+  }
+
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<App />);
+  </script>
+</body>
+</html>

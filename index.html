@@ -473,12 +473,6 @@
     }, [user]);
 
     const [mpStatus, setMpStatus] = useState('idle'); 
-    const [configMP, setConfigMP] = useState(null);
-
-    useEffect(() => {
-        const key = lojaAtiva === 'Morada' ? 'mp_config_Morada' : 'mp_config_NH';
-        setConfigMP(storageGet(key, null));
-    }, [lojaAtiva]);
 
     const categorias = ['Todos', ...new Set(produtos.map(p => p.categoria))];
     const filtrados = produtos.filter(p => {
@@ -492,9 +486,8 @@
         const itemCarrinho = carrinho.find(i => i.id === p.id);
         const qtdCarrinho = itemCarrinho ? itemCarrinho.quantidade : 0;
         
-        // BLOQUEIO RIGIDO DE ESTOQUE
         if(est <= 0 || qtdCarrinho >= est) {
-            alert(`🚫 ESTOQUE INSUFICIENTE!\nDisponível: ${est} un.`);
+            alert(`🚫 ESTOQUE INSUFICIENTE!`);
             return;
         }
         
@@ -505,51 +498,59 @@
     function remove(id) { setCarrinho(carrinho.filter(i => i.id !== id)); }
     const total = carrinho.reduce((a, b) => a + (Number(b.preco) * Number(b.quantidade)), 0);
 
-    async function processarPagamentoCartao(tipo) {
-        setMpStatus('processing');
-        setTimeout(() => {
-            setMpStatus('success');
-            setTimeout(() => {
-                finalizarVenda(total, clienteSelecionado, lojaAtiva, tipo);
-                setModalPagamento(false);
-                setMpStatus('idle');
-            }, 1500);
-        }, 2000); 
-    }
-
     return (
-      <div className="flex flex-col md:flex-row h-full overflow-hidden relative">
-        {/* ÁREA DE PRODUTOS (Esquerda no PC, Topo no Mobile) */}
-        <div className="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden">
-            {/* Barra Topo: Busca e Filtros */}
-            <div className="p-3 bg-white shadow-sm border-b z-10 flex flex-col gap-2">
-                <div className="flex gap-2 items-center">
-                   <div className="flex-1 relative">
-                        <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Buscar doce..." className="w-full p-2 pl-3 rounded-lg border bg-gray-100 outline-none focus:ring-2 focus:ring-doceriaPink" />
-                   </div>
-                   <select value={lojaAtiva} disabled={user.role!=='admin'} onChange={e=>{setLojaAtiva(e.target.value);setCarrinho([])}} className="p-2 rounded-lg border bg-white font-bold text-xs">
-                        <option value="Morada">🏠 Morada</option>
-                        <option value="Novo Horizonte">🌅 NH</option>
-                   </select>
+      <div className="flex flex-col md:flex-row h-full overflow-hidden bg-gray-100">
+        {/* ESQUERDA: PRODUTOS */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* Cabeçalho de Busca Fixo */}
+            <div className="p-2 bg-white border-b shadow-sm space-y-2">
+                <div className="flex gap-2">
+                    <input 
+                        value={busca} 
+                        onChange={e=>setBusca(e.target.value)} 
+                        placeholder="🔍 Buscar doce..." 
+                        className="flex-1 p-3 rounded-xl border-0 bg-gray-100 text-sm outline-none focus:ring-2 focus:ring-doceriaPink" 
+                    />
+                    <select 
+                        value={lojaAtiva} 
+                        disabled={user.role!=='admin'} 
+                        onChange={e=>{setLojaAtiva(e.target.value);setCarrinho([])}} 
+                        className="p-2 rounded-xl border-0 bg-chocolate text-white font-bold text-xs"
+                    >
+                        <option value="Morada">Morada</option>
+                        <option value="Novo Horizonte">NH</option>
+                    </select>
                 </div>
+                {/* Filtro de Categorias */}
                 <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                    {categorias.map(c => (<button key={c} onClick={()=>setCat(c)} className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition ${cat===c ? 'bg-chocolate text-white' : 'bg-gray-200 text-gray-600'}`}>{c}</button>))}
+                    {categorias.map(c => (
+                        <button 
+                            key={c} 
+                            onClick={()=>setCat(c)} 
+                            className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${cat===c ? 'bg-doceriaPink text-white' : 'bg-gray-200 text-gray-600'}`}
+                        >
+                            {c}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            {/* Grid de Produtos (Scrollável) */}
-            <div className="flex-1 overflow-y-auto p-2 pb-24 md:pb-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {/* Grid de Produtos com Scroll Independente */}
+            <div className="flex-1 overflow-y-auto p-3 pb-40 md:pb-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                     {filtrados.map(p => {
                         const est = getEstoque(p);
                         const semEstoque = est <= 0;
                         return (
-                            <div key={p.id} onClick={()=>add(p)} className={`relative bg-white p-3 rounded-xl border shadow-sm active:scale-95 transition flex flex-col items-center text-center select-none ${semEstoque ? 'opacity-60 grayscale cursor-not-allowed' : 'cursor-pointer hover:border-doceriaPink'}`}>
-                                {semEstoque && <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10"><span className="bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded">ESGOTADO</span></div>}
-                                <div className="text-3xl mb-1">{p.emoji}</div>
-                                <div className="font-bold text-gray-800 text-xs leading-tight line-clamp-2 h-8 flex items-center">{p.nome}</div>
-                                <div className="text-doceriaPink font-bold text-sm mt-1">{currency(p.preco)}</div>
-                                <div className={`text-[10px] mt-1 font-bold ${est < 10 ? 'text-red-500' : 'text-gray-400'}`}>Est: {est}</div>
+                            <div 
+                                key={p.id} 
+                                onClick={()=>!semEstoque && add(p)} 
+                                className={`relative bg-white p-3 rounded-2xl shadow-sm border-2 transition-all active:scale-95 ${semEstoque ? 'opacity-50 grayscale border-transparent' : 'border-white hover:border-doceriaPink'}`}
+                            >
+                                <div className="text-4xl mb-2 text-center">{p.emoji}</div>
+                                <div className="font-bold text-gray-800 text-[11px] leading-tight h-8 line-clamp-2 text-center">{p.nome}</div>
+                                <div className="text-doceriaPink font-black text-center mt-1">{currency(p.preco)}</div>
+                                <div className={`text-[9px] text-center mt-1 font-bold ${est < 5 ? 'text-red-500' : 'text-gray-400'}`}>Qtd: {est}</div>
                             </div>
                         );
                     })}
@@ -557,45 +558,65 @@
             </div>
         </div>
 
-        {/* ÁREA DO CARRINHO (Direita no PC, Fixa embaixo no Mobile) */}
-        <div className="w-full md:w-96 bg-white border-t md:border-t-0 md:border-l border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-none z-20 flex flex-col md:h-full absolute bottom-[58px] md:static h-[35vh] md:h-auto">
-            <div className="p-2 bg-chocolate text-white flex justify-between items-center md:rounded-tl-xl">
-                <div className="flex items-center gap-2"><span className="text-xl">🛒</span> <span className="font-bold text-sm">CUPOM</span></div>
-                <span className="bg-white/20 text-xs px-2 py-0.5 rounded font-bold">{carrinho.length} itens</span>
+        {/* DIREITA/BASE: CARRINHO OTIMIZADO */}
+        <div className="w-full md:w-80 bg-white border-t md:border-t-0 md:border-l flex flex-col shadow-[0_-10px_20px_rgba(0,0,0,0.05)] z-30 max-h-[40vh] md:max-h-full">
+            {/* Resumo rápido para Mobile */}
+            <div className="md:hidden flex justify-between items-center px-4 py-2 bg-chocolate text-white">
+                <span className="text-xs font-bold">{carrinho.length} itens no carrinho</span>
+                <span className="font-bold text-lg">{currency(total)}</span>
             </div>
 
-            {/* Lista de Itens (Scrollável) */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-gray-50">
-                {carrinho.length === 0 && <div className="flex flex-col items-center justify-center h-full text-gray-400 text-sm opacity-50"><span className="text-4xl mb-2">🛍️</span>Vazio</div>}
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 hidden md:block">
                 {carrinho.map(item => (
-                    <div key={item.id} className="flex justify-between items-center bg-white p-2 rounded border border-gray-100 shadow-sm text-sm">
-                        <div className="flex-1">
-                            <div className="font-bold text-gray-800 line-clamp-1">{item.nome}</div>
-                            <div className="text-xs text-gray-500">{item.quantidade}x {currency(item.preco)}</div>
+                    <div key={item.id} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg text-xs">
+                        <div className="flex-1 pr-2">
+                            <div className="font-bold text-gray-800">{item.nome}</div>
+                            <div className="text-gray-500">{item.quantidade}x {currency(item.preco)}</div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <span className="font-bold text-chocolate">{currency(item.preco * item.quantidade)}</span>
-                            <button onClick={()=>remove(item.id)} className="w-6 h-6 flex items-center justify-center bg-red-100 text-red-500 rounded font-bold">×</button>
-                        </div>
+                        <button onClick={()=>remove(item.id)} className="text-red-500 font-bold p-2 text-lg">×</button>
                     </div>
                 ))}
             </div>
             
-            {/* Totais e Botão Pagar */}
-            <div className="p-3 bg-white border-t space-y-2">
-                <select value={clienteSelecionado} onChange={(e) => setClienteSelecionado(e.target.value)} className="w-full p-2 bg-gray-50 border rounded text-sm outline-none">
+            <div className="p-3 bg-white space-y-2">
+                <select 
+                    value={clienteSelecionado} 
+                    onChange={(e) => setClienteSelecionado(e.target.value)} 
+                    className="w-full p-3 bg-gray-100 rounded-xl text-sm outline-none border-0"
+                >
                     <option value="">👤 Cliente Avulso</option>
                     {clientes.map(c => (<option key={c.id} value={c.id}>{c.nome}</option>))}
                 </select>
-                <div className="flex justify-between items-center">
-                    <span className="text-gray-500 text-sm font-bold uppercase">Total a Pagar</span>
-                    <span className="text-2xl font-extrabold text-chocolate">{currency(total)}</span>
-                </div>
-                <button onClick={()=>setModalPagamento(true)} disabled={carrinho.length===0} className="w-full py-3 bg-green-600 text-white font-bold rounded-lg shadow hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition text-lg flex justify-center items-center gap-2">
-                    <span>✅</span> FINALIZAR
+                
+                <button 
+                    onClick={()=>setModalPagamento(true)} 
+                    disabled={carrinho.length===0} 
+                    className="w-full py-4 bg-green-600 text-white font-black rounded-2xl shadow-lg active:bg-green-700 disabled:opacity-50 transition-all flex justify-between px-6 items-center"
+                >
+                    <span>PAGAR</span>
+                    <span className="text-xl">{currency(total)}</span>
                 </button>
             </div>
         </div>
+
+        {/* MODAL DE PAGAMENTO (Igual ao anterior, mas com z-index garantido) */}
+        {modalPagamento && (
+            <div className="fixed inset-0 bg-black/80 z-[100] flex items-end md:items-center justify-center p-0 md:p-4">
+                <div className="bg-white rounded-t-3xl md:rounded-3xl w-full max-w-md p-6 shadow-2xl">
+                    <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-6 md:hidden"></div>
+                    <h3 className="text-xl font-bold text-chocolate mb-2 text-center">Forma de Pagamento</h3>
+                    <div className="text-center text-4xl font-black text-gray-800 mb-8">{currency(total)}</div>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        <button onClick={()=>{ finalizarVenda(total, clienteSelecionado, lojaAtiva, 'Dinheiro'); setModalPagamento(false); }} className="p-4 bg-green-100 text-green-800 rounded-2xl font-bold flex flex-col items-center gap-2"><span className="text-2xl">💵</span> Dinheiro</button>
+                        <button onClick={()=>processarPagamentoCartao('Pix')} className="p-4 bg-teal-100 text-teal-800 rounded-2xl font-bold flex flex-col items-center gap-2"><span className="text-2xl">💠</span> Pix</button>
+                        <button onClick={()=>processarPagamentoCartao('Débito')} className="p-4 bg-blue-100 text-blue-800 rounded-2xl font-bold flex flex-col items-center gap-2"><span className="text-2xl">💳</span> Débito</button>
+                        <button onClick={()=>processarPagamentoCartao('Crédito')} className="p-4 bg-mpBlue text-white rounded-2xl font-bold flex flex-col items-center gap-2"><span className="text-2xl">💳</span> Crédito</button>
+                    </div>
+                    <button onClick={()=>setModalPagamento(false)} className="w-full py-4 bg-gray-100 text-gray-500 font-bold rounded-2xl">Voltar</button>
+                </div>
+            </div>
+        )}
+      
 
         {modalPagamento && (
             <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
